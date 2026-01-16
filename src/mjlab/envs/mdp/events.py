@@ -311,6 +311,7 @@ def reset_joints_by_offset(
   if isinstance(joint_ids, list):
     joint_ids = torch.tensor(joint_ids, device=env.device)
 
+  
   asset.write_joint_state_to_sim(
     joint_pos.view(len(env_ids), -1),
     joint_vel.view(len(env_ids), -1),
