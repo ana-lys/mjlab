@@ -12,5 +12,9 @@ from mjlab.sensor.raycast_sensor import (
 from mjlab.sensor.raycast_sensor import RayCastData as RayCastData
 from mjlab.sensor.raycast_sensor import RayCastSensor as RayCastSensor
 from mjlab.sensor.raycast_sensor import RayCastSensorCfg as RayCastSensorCfg
+from mjlab.sensor.contact_ffw import ContactDataFFW as ContactDataFFW
+from mjlab.sensor.contact_ffw import ContactMatchFFW as ContactMatchFFW
+from mjlab.sensor.contact_ffw import ContactSensorFFW as ContactSensorFFW
+from mjlab.sensor.contact_ffw import ContactSensorFFWCfg as ContactSensorFFWCfg
 from mjlab.sensor.sensor import Sensor as Sensor
 from mjlab.sensor.sensor import SensorCfg as SensorCfg
