@@ -16,20 +16,26 @@ from mjlab.scene import SceneCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.viewer import ViewerConfig
 from mjlab.asset_zoo.robots.robotis_ffw.ffw_constant import get_robotis_ffw_robot_cfg
+from mjlab.asset_zoo.robots.robotis_ffw.ffw_obstacles import get_obstacle_cfgs
 from mjlab.envs import mdp
 from mjlab.tasks.ffw import mdp as ffw_mdp
 from mjlab.tasks.ffw.mdp.commands import TargetPoseCommandCfg, TargetPoseCommand
-from mjlab.sensor.contact_ffw import ContactSensorFFWCfg as ContactSensorCfg, ContactMatchFFW as ContactMatch
 
+from mjlab.sensor.contact_ffw import ContactSensorFFWCfg as ContactSensorCfg
+from mjlab.sensor.contact_ffw import ContactMatchFFW as ContactMatch
 
 SCENE_CFG = SceneCfg(
-  num_envs=4096,
+  num_envs=8192,
   extent=1.0,
-  entities={"robot": get_robotis_ffw_robot_cfg()},
+  entities={
+    "robot": get_robotis_ffw_robot_cfg(),
+    **get_obstacle_cfgs(num_tables=0, num_poles=0, num_cubes=0, num_capsules=0),
+  },
   sensors=(
       ContactSensorCfg(
           name="contact_sensor",
-          primary=ContactMatch(mode="body", pattern=".*", entity="robot"),
+          primary=ContactMatch(mode="body", pattern="^(?!.*(pole|drive)).*", entity="robot"),
+          num_slots = 2,
       ),
   ),
 )
@@ -43,13 +49,14 @@ VIEWER_CONFIG = ViewerConfig(
 )
 
 SIM_CFG = SimulationCfg(
-    njmax=250,
-    nconmax=250,
+    njmax=200,
+    nconmax=200,
     mujoco=MujocoCfg(
     # 50 Hz env step with decimation=1 -> timestep = 0.02 s.
     timestep=0.02,
     iterations=10,
     ls_iterations=20,
+    ccd_iterations=25,
   ),
 )
 
@@ -110,19 +117,44 @@ def create_ffw_observations() -> dict[str, ObservationGroupCfg]:
         func=mdp.joint_vel_rel,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=(joint_filter,))},
       ),
+      "top_collision_force": ObservationTermCfg(
+        func=ffw_mdp.top_collision_forces,
+        params={"sensor_name": "contact_sensor"},
+      ),
+      "top_collision_pos": ObservationTermCfg(
+        func=ffw_mdp.top_collision_pos,
+        params={"sensor_name": "contact_sensor"},
+      ),
+      "collision_occupancy": ObservationTermCfg(
+        func=ffw_mdp.collision_occupancy,
+        params={"sensor_name": "contact_sensor"},
+      ),
+      "ee_pos": ObservationTermCfg(
+        func=ffw_mdp.target_ee_pos,
+      ),
       "last_action": ObservationTermCfg(func=mdp.last_action),
-      "ee_pose_error": ObservationTermCfg(
-        func=ffw_mdp.ee_pose_error,
+      "ee_pos_error": ObservationTermCfg(
+        func=ffw_mdp.ee_pos_error,
         params={
           "asset_cfg": SceneEntityCfg(
             "robot", site_names=("left_gripper_site", "right_gripper_site")
           )
         },
       ),
+      "body_pos": ObservationTermCfg(
+        func=mdp.body_pos_flat,
+        params={
+          "asset_cfg": SceneEntityCfg(
+            "robot", body_names=("arm_[lr]_link[3-7]",)
+          )
+        },
+      ),
+      
     }
 
+  # Set concatenate_terms=False to keep observations as a dict of terms
   return {
-    "policy": ObservationGroupCfg(terms=get_terms(), concatenate_terms=True),
+    "actor": ObservationGroupCfg(terms=get_terms(), concatenate_terms=True),
     "critic": ObservationGroupCfg(terms=get_terms(), concatenate_terms=True),
   }
 
@@ -131,7 +163,7 @@ def create_ffw_commands() -> dict[str, CommandTermCfg]:
     return {
         "target_pose": TargetPoseCommandCfg(
             class_type=TargetPoseCommand,
-            resampling_time_range=(1.5, 2.0),
+            resampling_time_range=(900000, 1000000.0),
             debug_vis=True,
         )
     }
@@ -145,9 +177,7 @@ def create_ffw_rewards() -> dict[str, RewardTermCfg]:
         weight=1.0,
         params={
             "asset_cfg": SceneEntityCfg(
-                "robot",
-                site_names=["left_gripper_site", "right_gripper_site"],
-                preserve_order=True,
+                "robot", site_names=("left_gripper_site", "right_gripper_site")
             ),
         },
     ),
@@ -157,20 +187,7 @@ def create_ffw_rewards() -> dict[str, RewardTermCfg]:
         params={
             "std": 0.05, # ~5cm precision for max bonus
             "asset_cfg": SceneEntityCfg(
-                "robot",
-                site_names=["left_gripper_site", "right_gripper_site"],
-                preserve_order=True,
-            ),
-        },
-    ),
-    "ee_track_quat": RewardTermCfg(
-        func=ffw_mdp.ee_tracking_quat_bimanual,
-        weight=-0.25,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                site_names=["left_gripper_site", "right_gripper_site"],
-                preserve_order=True,
+                "robot", site_names=("left_gripper_site", "right_gripper_site")
             ),
         },
     ),
@@ -181,7 +198,7 @@ def create_ffw_rewards() -> dict[str, RewardTermCfg]:
     ),
     "collision": RewardTermCfg(
         func=ffw_mdp.collision_penalty,
-        weight=-20.0,
+        weight=-50.0,
         params={"sensor_name": "contact_sensor"},
     ),
     "joint_acc_l2": RewardTermCfg(
@@ -192,27 +209,28 @@ def create_ffw_rewards() -> dict[str, RewardTermCfg]:
 
 
 def create_ffw_events() -> dict[str, EventTermCfg]:
-  """Reset + random end-effector goal sampling."""
+  """Reset + random end-effector goal sampling + obstacle randomization."""
 
-  return {
-    "reset_robot_joints": EventTermCfg(
-      func=mdp.reset_joints_by_offset,
+  events: dict[str, EventTermCfg] = {
+     "reset_robot_joints": EventTermCfg(
+      func=ffw_mdp.StatefulReset,  # Pass the class, manager instantiates it
       mode="reset",
       params={
-        "position_range": (-1.5, 1.5),
         "velocity_range": (-1.0, 1.0),
         "asset_cfg": SceneEntityCfg("robot", joint_names=("^(?!.*(head|gripper)).*",)),
+        "scene_cfg": SCENE_CFG,
       },
     ),
   }
+  return events
 
 
 def create_ffw_terminations() -> dict[str, TerminationTermCfg]:
   """Timeout + Collision."""
   return {
-    "timeout": TerminationTermCfg(func=mdp.time_out, time_out=True),
+    "timeout": TerminationTermCfg(func=ffw_mdp.stateful_time_out, time_out=True),
     "illegal_contact": TerminationTermCfg(
-        func=ffw_mdp.illegal_contact,
+        func=ffw_mdp.scene_shuffle,
         params={"sensor_name": "contact_sensor"},
     ),
   }
@@ -232,7 +250,7 @@ def create_ffw_env_cfg() -> ManagerBasedRlEnvCfg:
     viewer=VIEWER_CONFIG,
     # Decimation=1 so env step frequency matches simulation (50 Hz).
     decimation=1,
-    episode_length_s=2.0, # 100 steps * 0.02s
+    episode_length_s=0.6, # 200 steps * 0.02s
   )
 
 

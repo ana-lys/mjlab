@@ -20,7 +20,7 @@ class RslRlModelCfg:
   """The type of noise standard deviation."""
   stochastic: bool = False
   """Whether the model output is stochastic."""
-  cnn_cfg: dict[str, Any] | None = None
+  # cnn_cfg: dict[str, Any] | None = None
   """CNN encoder config. When set, class_name should be "CNNModel".
 
   Passed to ``rsl_rl.modules.CNN``. Common keys: output_channels,
@@ -29,6 +29,31 @@ class RslRlModelCfg:
   class_name: str = "MLPModel"
   """Model class name resolved by RSL-RL (MLPModel or CNNModel)."""
 
+@dataclass
+class RslRLRnnModelCfg:
+    """Configuration for the RNN-based neural model."""
+
+    hidden_dims: Tuple[int, ...] = (256, 256, 256)
+    """Hidden dimensions of the MLP."""
+    activation: str = "elu"
+    """Activation function of the MLP."""
+    obs_normalization: bool = False
+    """Whether to normalize the observations."""
+    stochastic: bool = False
+    """Whether the model outputs stochastic or deterministic values."""
+    init_noise_std: float = 1.0
+    """Initial standard deviation of the stochastic output."""
+    noise_std_type: Literal["scalar", "log"] = "scalar"
+    """Whether the standard deviation is defined as a scalar or in log space."""
+    state_dependent_std: bool = False
+    """Whether the standard deviation is state dependent."""
+    rnn_type: Literal["lstm", "gru"] = "gru"
+    """Type of RNN to use ("lstm" or "gru")."""
+    rnn_hidden_dim: int = 128
+    """Dimension of the RNN hidden state."""
+    rnn_num_layers: int = 1
+    """Number of RNN layers."""
+    class_name: str = "RNNModel"
 
 @dataclass
 class RslRlPpoAlgorithmCfg:
@@ -111,6 +136,9 @@ class RslRlBaseRunnerCfg:
   """
   clip_actions: float | None = None
   """The clipping range for action values. If None (default), no clipping is applied."""
+  upload_model: bool = True
+  """Whether to upload model files (.pt, .onnx) to W&B on save. Set to
+  False to keep metric logging but avoid storage usage. Default is True."""
 
 
 @dataclass

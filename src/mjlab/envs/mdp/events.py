@@ -319,7 +319,6 @@ def reset_joints_by_offset(
     joint_ids=joint_ids,
   )
 
-
 def push_by_setting_velocity(
   env: ManagerBasedRlEnv,
   env_ids: torch.Tensor,
@@ -929,3 +928,6 @@ def sync_actuator_delays(
   # Apply the same lag to all delayed actuators.
   for actuator in delayed_actuators:
     actuator.set_lags(lags, env_ids)
+
+
+

@@ -21,13 +21,21 @@ if TYPE_CHECKING:
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 
 
+def _active_mask(env: "ManagerBasedRlEnv") -> torch.Tensor:
+  sr = getattr(env, "ffw_state", None)
+  if sr is None:
+    return torch.ones(env.num_envs, device=env.device)
+  return sr.env_ready.float()
+
+
 
 def joint_vel_l2(
   env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
   """Penalize joint velocities on the articulation using L2 squared kernel."""
   asset: Entity = env.scene[asset_cfg.name]
-  return torch.sum(torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1)
+  mask = _active_mask(env)
+  return torch.sum(torch.square(asset.data.joint_vel[:, asset_cfg.joint_ids]), dim=1) * mask
 
 
 def joint_acc_l2(
@@ -35,14 +43,16 @@ def joint_acc_l2(
 ) -> torch.Tensor:
   """Penalize joint accelerations on the articulation using L2 squared kernel."""
   asset: Entity = env.scene[asset_cfg.name]
-  return torch.sum(torch.square(asset.data.joint_acc[:, asset_cfg.joint_ids]), dim=1)
+  mask = _active_mask(env)
+  return torch.sum(torch.square(asset.data.joint_acc[:, asset_cfg.joint_ids]), dim=1) * mask
 
 
 def action_rate_l2(env: ManagerBasedRlEnv) -> torch.Tensor:
   """Penalize the rate of change of the actions using L2 squared kernel."""
+  mask = _active_mask(env)
   return torch.sum(
     torch.square(env.action_manager.action - env.action_manager.prev_action), dim=1
-  )
+  ) * mask
 
 
 def collision_penalty(
@@ -50,44 +60,48 @@ def collision_penalty(
 ) -> torch.Tensor:
   """Penalize collisions based on contact presence."""
   sensor: ContactSensorFFW = env.scene[sensor_name]
-  # Return whether collision is detected
-  return sensor.data.collision_detected.squeeze(-1)
+  mask = _active_mask(env)
+  return sensor.data.collision_detected.squeeze(-1) * mask
+
+
+def _compute_pos_error(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+) -> torch.Tensor | None:
+    """Compute [N, S, 3] position error (target - ee) from live sim data."""
+    sr = getattr(env, "ffw_state", None)
+    if sr is None:
+        return None
+    asset: Entity = env.scene[asset_cfg.name]
+    ee_pos_w = asset.data.site_pos_w[:, asset_cfg.site_ids, :]  # [N, S, 3]
+    return sr.target_ee_pos - ee_pos_w                          # [N, S, 3]
 
 
 def ee_tracking_l2_bimanual(
     env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Penalize summed L2 distance of both end-effectors (sites) from their targets."""
-    # Try using cached error from observations (fastest)
-    # Cache is [N, S, 3] vector (target - ee)
-    pos_error = getattr(env, "ffw_cached_pos_error_w", None)
-    
+    pos_error = _compute_pos_error(env, asset_cfg)
+    mask = _active_mask(env)
     if pos_error is None:
-        asset: Entity = env.scene[asset_cfg.name]
-        ee_pos = asset.data.site_pos_w[:, asset_cfg.site_ids, :]
-        target_pos = getattr(env, "target_ee_pos")
-        pos_error = target_pos - ee_pos
+      return torch.zeros(env.num_envs, device=env.device) * mask
 
     # Sum of squared distances over both dimensions and both hands
     l2_sq = torch.sum(torch.square(pos_error), dim=(1, 2))
     # Convert to strictly positive reward: 1.0 (perfect) -> 0.0 (far), exp(-d^2)
-    return torch.exp(-l2_sq)
+    return torch.exp(-l2_sq) * mask
 
 def ee_tracking_tanh_bimanual(
     env: ManagerBasedRlEnv,
     std: float,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
 ) -> torch.Tensor:
     """Tanh-based dense reward for each hand being close to its target, summed."""
-    # Try using cached error from observations (fastest)
-    pos_error = getattr(env, "ffw_cached_pos_error_w", None)
-    
+    pos_error = _compute_pos_error(env, asset_cfg)
+    mask = _active_mask(env)
     if pos_error is None:
-        asset: Entity = env.scene[asset_cfg.name]
-        ee_pos = asset.data.site_pos_w[:, asset_cfg.site_ids, :]
-        target_pos = getattr(env, "target_ee_pos")
-        pos_error = target_pos - ee_pos
+      return torch.zeros(env.num_envs, device=env.device) * mask
         
     # Per-hand Euclidean distance [B, 2]
     # pos_error is (target - ee), norm is distance
@@ -95,27 +109,4 @@ def ee_tracking_tanh_bimanual(
     
     # Tanh reward per hand: 1 - tanh(dist / std)
     reward_per_hand = 1.0 - torch.tanh(dist_per_hand / std)
-    
-    return torch.sum(reward_per_hand, dim=-1)
-
-
-def ee_tracking_quat_bimanual(
-    env: ManagerBasedRlEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) -> torch.Tensor:
-    """Penalize orientation error of both end-effectors."""
-    # Try using cached error from observations (fastest)
-    # Cache is [N, S, 3] axis-angle vector representing rotation difference
-    rot_error = getattr(env, "ffw_cached_rot_error_w", None)
-    
-    if rot_error is not None:
-        # Magnitude of axis-angle vector is the angle (radians)
-        error_rad = torch.norm(rot_error, dim=-1)
-    else:
-        from mjlab.utils.lab_api.math import quat_error_magnitude
-        asset: Entity = env.scene[asset_cfg.name]
-        ee_quat = asset.data.site_quat_w[:, asset_cfg.site_ids, :]
-        target_quat = getattr(env, "target_ee_quat")
-        error_rad = quat_error_magnitude(ee_quat, target_quat)
-    
-    return torch.sum(error_rad, dim=-1)
+    return torch.sum(reward_per_hand, dim=-1) * mask

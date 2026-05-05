@@ -9,7 +9,7 @@ This script profiles:
 - Reset operations
 
 Usage:
-    python scripts/profile_env.py --task Mjlab-Velocity-Flat-Unitree-G1 --num-envs 4096
+    python scripts/profile_env.py --task Mjlab-FFW-Minimal --num-envs 8192
 """
 
 import argparse

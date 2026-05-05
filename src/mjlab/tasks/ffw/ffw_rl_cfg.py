@@ -2,21 +2,53 @@
 
 from mjlab.rl import (
   RslRlOnPolicyRunnerCfg,
-  RslRlPpoActorCriticCfg,
+  RslRlModelCfg,
   RslRlPpoAlgorithmCfg,
+  RslRLRnnModelCfg
 )
+
+    # actor=RslRlModelCfg(
+    #   hidden_dims=(512, 256, 128),
+    #   activation="elu",
+    #   init_noise_std=0.5,
+    #   obs_normalization=True,
+    #   stochastic=True,
+    # ),
+    # critic=RslRlModelCfg(
+    #   hidden_dims=(512, 256, 128),
+    #   activation="elu",
+    #   obs_normalization=True,
+    #   stochastic=False,
+    # ),
+    
+    
+      # actor=RslRlModelCfg(
+      # class_name="RNNModel",
+      # rnn_type="lstm",
+      # rnn_hidden_dim=64,
+      # rnn_num_layers=1,
+      # hidden_dims=(512, 256, 128),
+      # activation="elu",
+      # init_noise_std=0.5,
+      # obs_normalization=True,
+      # stochastic=True,
 
 
 def ffw_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
   """Create RL runner configuration for FFW task."""
   return RslRlOnPolicyRunnerCfg(
-    policy=RslRlPpoActorCriticCfg(
-      init_noise_std=0.5,
-      actor_obs_normalization=True,
-      critic_obs_normalization=True,
-      actor_hidden_dims=(512, 256, 128),
-      critic_hidden_dims=(512, 256, 128),
+     actor=RslRlModelCfg(
+      hidden_dims=(512, 256, 128),
       activation="elu",
+      init_noise_std=0.5,
+      obs_normalization=True,
+      stochastic=True,
+    ),
+    critic=RslRlModelCfg(
+      hidden_dims=(512, 256, 128),
+      activation="elu",
+      obs_normalization=True,
+      stochastic=False,
     ),
     algorithm=RslRlPpoAlgorithmCfg(
       value_loss_coef=1.0,
