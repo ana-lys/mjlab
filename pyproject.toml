@@ -136,7 +136,6 @@ torch = [
   { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform != 'darwin'" },
 ]
 mujoco = { index = "mujoco" }
-mujoco-warp = { git = "https://github.com/google-deepmind/mujoco_warp", rev = "ea7f05b" }
 
 [tool.ruff]
 src = ["src"]  # Helpful for recognizing first-party imports.
