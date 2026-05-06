@@ -1,0 +1,9 @@
+<mujoco model="obstacle_cube">
+  <worldbody>
+    <body name="obs" pos="0 0 0">
+      <!-- Small cube: 20 cm side (half-extent 0.1) -->
+      <geom name="cube_geom" type="box" size="0.1 0.1 0.1"
+            rgba="0.85 0.35 0.15 1" contype="1" conaffinity="1"/>
+    </body>
+  </worldbody>
+</mujoco>

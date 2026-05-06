@@ -43,6 +43,62 @@ def projected_gravity(
   return asset.data.projected_gravity_b
 
 
+
+##
+# Body state.
+##
+
+
+def body_pos(
+  env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
+) -> torch.Tensor:
+  """Get the position of the entity's bodies/links in the world frame.
+
+  To select specific bodies, specify `body_names` in `asset_cfg`.
+  Example: `SceneEntityCfg("robot", body_names=["link1", "link2"])`.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  return asset.data.body_link_pose_w[:, asset_cfg.body_ids, :3]
+
+
+def body_quat(
+  env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
+) -> torch.Tensor:
+  """Get the orientation of the entity's bodies/links in the world frame.
+
+  To select specific bodies, specify `body_names` in `asset_cfg`.
+  Example: `SceneEntityCfg("robot", body_names=["link1", "link2"])`.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  return asset.data.body_link_pose_w[:, asset_cfg.body_ids, 3:7]
+
+
+def body_pos_flat(
+  env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
+) -> torch.Tensor:
+  """Get the flattened position of the entity's bodies/links in the world frame.
+
+  To select specific bodies, specify `body_names` in `asset_cfg`.
+  Example: `SceneEntityCfg("robot", body_names=["link1", "link2"])`.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  pos = asset.data.body_link_pose_w[:, asset_cfg.body_ids, :3]
+  return pos.view(pos.shape[0], -1)
+
+
+def body_quat_flat(
+  env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
+) -> torch.Tensor:
+  """Get the flattened orientation of the entity's bodies/links in the world frame.
+
+  To select specific bodies, specify `body_names` in `asset_cfg`.
+  Example: `SceneEntityCfg("robot", body_names=["link1", "link2"])`.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  quat = asset.data.body_link_pose_w[:, asset_cfg.body_ids, 3:7]
+  return quat.view(quat.shape[0], -1)
+
+
 ##
 # Joint state.
 ##
